@@ -1,0 +1,43 @@
+﻿cmake_minimum_required(VERSION 3.10)
+
+project(OpenGL_Engine VERSION 1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# If there is a src subdirectory with its own CMakeLists, add it so
+# that any libraries it defines become available for linking.
+if(EXISTS "${CMAKE_SOURCE_DIR}/src/CMakeLists.txt")
+  add_subdirectory("${CMAKE_SOURCE_DIR}/src")
+endif()
+
+# Collect project sources (root-level .cpp and anything under src/)
+file(GLOB_RECURSE PROJECT_SOURCES
+  "${CMAKE_SOURCE_DIR}/*.cpp"
+  "${CMAKE_SOURCE_DIR}/src/*.cpp"
+)
+
+if(NOT PROJECT_SOURCES)
+  message(FATAL_ERROR "No source files found for the project")
+endif()
+
+add_executable(opengl_engine ${PROJECT_SOURCES})
+
+# Include common include directory if present
+if(EXISTS "${CMAKE_SOURCE_DIR}/include")
+  target_include_directories(opengl_engine PRIVATE "${CMAKE_SOURCE_DIR}/include")
+endif()
+
+# Link to any library target created by src/CMakeLists (example: project_lib)
+if(TARGET project_lib)
+  target_link_libraries(opengl_engine PRIVATE project_lib)
+endif()
+
+# Try to find and link system OpenGL (optional)
+find_package(OpenGL)
+if(OpenGL_FOUND)
+  target_link_libraries(opengl_engine PRIVATE OpenGL::GL)
+endif()
+
+# Installation (optional)
+install(TARGETS opengl_engine DESTINATION bin)

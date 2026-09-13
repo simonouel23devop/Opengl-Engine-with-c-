@@ -1,0 +1,70 @@
+﻿#pragma once
+
+#include <string>
+#include <vector>
+#include <memory>
+
+struct Vector3 {
+	float x{0}, y{0}, z{0};
+	Vector3() = default;
+	Vector3(float X, float Y, float Z) : x(X), y(Y), z(Z) {}
+};
+
+class GameObject {
+public:
+	std::string name;
+	Vector3 position;
+	Vector3 rotation; // Euler angles in degrees
+	bool active{true};
+
+	GameObject(const std::string& n) : name(n) {}
+	virtual ~GameObject() = default;
+
+	virtual void update(float dt);
+	virtual void onInteract();
+};
+
+class Cube : public GameObject {
+public:
+	float rotationSpeed{90.0f}; // degrees/sec
+	Cube(const std::string& n = "Cube") : GameObject(n) {}
+	void update(float dt) override;
+	void onInteract() override;
+};
+
+class Sphere : public GameObject {
+public:
+	float rotationSpeed{60.0f};
+	Sphere(const std::string& n = "Sphere") : GameObject(n) {}
+	void update(float dt) override;
+	void onInteract() override;
+};
+
+class Player {
+public:
+	Vector3 position;
+	float speed{3.0f}; // units per second
+
+	Player() = default;
+	void move(char direction, float dt);
+};
+
+class Engine {
+public:
+	Engine();
+	~Engine();
+
+	void init();
+	void run();
+	void stop();
+
+private:
+	bool m_running{false};
+	Player m_player;
+	std::vector<std::shared_ptr<GameObject>> m_objects;
+
+	void update(float dt);
+	void render();
+	void processInput(const std::string& input, float dt);
+	void spawnDefaultScene();
+};

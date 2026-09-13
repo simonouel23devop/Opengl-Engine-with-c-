@@ -1,0 +1,237 @@
+﻿#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include <iostream>
+#include <vector>
+#include <cmath>
+
+static const char* vertexShaderSrc = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+
+uniform mat4 uMVP;
+uniform mat4 uModel;
+
+out vec3 vNormal;
+out vec3 vPos;
+
+void main() {
+	vNormal = mat3(transpose(inverse(uModel))) * aNormal;
+	vPos = vec3(uModel * vec4(aPos, 1.0));
+	gl_Position = uMVP * vec4(aPos, 1.0);
+}
+)";
+
+static const char* fragmentShaderSrc = R"(
+#version 330 core
+in vec3 vNormal;
+in vec3 vPos;
+out vec4 FragColor;
+
+uniform vec3 uColor;
+uniform vec3 uLightPos;
+
+void main() {
+	vec3 N = normalize(vNormal);
+	vec3 L = normalize(uLightPos - vPos);
+	float diff = max(dot(N, L), 0.1);
+	vec3 col = uColor * diff;
+	FragColor = vec4(col, 1.0);
+}
+)";
+
+static GLuint compileShader(GLenum type, const char* src) {
+	GLuint s = glCreateShader(type);
+	glShaderSource(s, 1, &src, nullptr);
+	glCompileShader(s);
+	GLint ok; glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		char buf[512]; glGetShaderInfoLog(s, 512, nullptr, buf);
+		std::cerr << "Shader compile error: " << buf << std::endl;
+	}
+	return s;
+}
+
+static GLuint createProgram() {
+	GLuint vs = compileShader(GL_VERTEX_SHADER, vertexShaderSrc);
+	GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSrc);
+	GLuint p = glCreateProgram();
+	glAttachShader(p, vs); glAttachShader(p, fs);
+	glLinkProgram(p);
+	GLint ok; glGetProgramiv(p, GL_LINK_STATUS, &ok);
+	if (!ok) { char buf[512]; glGetProgramInfoLog(p, 512, nullptr, buf); std::cerr << "Program link: " << buf << std::endl; }
+	glDeleteShader(vs); glDeleteShader(fs);
+	return p;
+}
+
+struct Mesh {
+	GLuint vao=0, vbo=0, ebo=0; GLsizei indexCount=0;
+};
+
+static Mesh makeCube() {
+	// positions and normals
+	float data[] = {
+		// positions        // normals
+		-1,-1,-1,  0,0,-1,
+		 1,-1,-1,  0,0,-1,
+		 1, 1,-1,  0,0,-1,
+		-1, 1,-1,  0,0,-1,
+		-1,-1, 1,  0,0,1,
+		 1,-1, 1,  0,0,1,
+		 1, 1, 1,  0,0,1,
+		-1, 1, 1,  0,0,1,
+	};
+	unsigned int idx[] = {
+		0,1,2, 2,3,0,
+		4,5,6, 6,7,4,
+		0,4,7, 7,3,0,
+		1,5,6, 6,2,1,
+		3,2,6, 6,7,3,
+		0,1,5, 5,4,0
+	};
+	Mesh m; m.indexCount = sizeof(idx)/sizeof(idx[0]);
+	glGenVertexArrays(1,&m.vao); glBindVertexArray(m.vao);
+	glGenBuffers(1,&m.vbo); glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW);
+	glGenBuffers(1,&m.ebo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0); glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)0);
+	glEnableVertexAttribArray(1); glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)(3*sizeof(float)));
+	glBindVertexArray(0);
+	return m;
+}
+
+static Mesh makeSphere(int lat = 16, int lon = 16) {
+	std::vector<float> data;
+	std::vector<unsigned int> idx;
+	for (int y=0;y<=lat;y++){
+		float v = (float)y/lat;
+		float theta = v * M_PI;
+		for (int x=0;x<=lon;x++){
+			float u = (float)x/lon;
+			float phi = u * (M_PI*2);
+			float sx = sin(theta)*cos(phi);
+			float sy = cos(theta);
+			float sz = sin(theta)*sin(phi);
+			data.push_back(sx);
+			data.push_back(sy);
+			data.push_back(sz);
+			data.push_back(sx);
+			data.push_back(sy);
+			data.push_back(sz);
+		}
+	}
+	for (int y=0;y<lat;y++){
+		for (int x=0;x<lon;x++){
+			int i0 = y*(lon+1)+x;
+			int i1 = i0+1;
+			int i2 = i0+(lon+1);
+			int i3 = i2+1;
+			idx.push_back(i0); idx.push_back(i2); idx.push_back(i1);
+			idx.push_back(i1); idx.push_back(i2); idx.push_back(i3);
+		}
+	}
+	Mesh m; m.indexCount = (GLsizei)idx.size();
+	glGenVertexArrays(1,&m.vao); glBindVertexArray(m.vao);
+	glGenBuffers(1,&m.vbo); glBindBuffer(GL_ARRAY_BUFFER,m.vbo);
+	glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
+	glGenBuffers(1,&m.ebo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size()*sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0); glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)0);
+	glEnableVertexAttribArray(1); glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)(3*sizeof(float)));
+	glBindVertexArray(0);
+	return m;
+}
+
+int main() {
+	if (!glfwInit()) return -1;
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+	GLFWwindow* window = glfwCreateWindow(800,600,"OpenGL App", nullptr, nullptr);
+	if (!window) { glfwTerminate(); return -1; }
+	glfwMakeContextCurrent(window);
+	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr<<"Failed to init GLAD\n"; return -1; }
+	glEnable(GL_DEPTH_TEST);
+
+	GLuint program = createProgram();
+	Mesh cube = makeCube();
+	Mesh sphere = makeSphere(24,24);
+
+	float lastTime = (float)glfwGetTime();
+	glm::vec3 camPos(0.0f, 1.0f, 6.0f);
+	glm::vec3 camFront(0.0f, 0.0f, -1.0f);
+	glm::vec3 camUp(0.0f,1.0f,0.0f);
+
+	bool cubeActive=true, sphereActive=true;
+
+	while (!glfwWindowShouldClose(window)){
+		float now = (float)glfwGetTime();
+		float dt = now - lastTime; lastTime = now;
+
+		// input
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camPos += camFront * (2.5f * dt);
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camPos -= camFront * (2.5f * dt);
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camPos -= glm::normalize(glm::cross(camFront, camUp)) * (2.5f * dt);
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camPos += glm::normalize(glm::cross(camFront, camUp)) * (2.5f * dt);
+
+		static bool interactPressed=false;
+		if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+			if (!interactPressed) {
+				// toggle nearest object
+				float distCube = glm::length(glm::vec3(2.0f,0.0f,0.0f) - camPos);
+				float distSphere = glm::length(glm::vec3(-2.0f,0.0f,0.0f) - camPos);
+				if (distCube < distSphere) cubeActive = !cubeActive; else sphereActive = !sphereActive;
+			}
+			interactPressed = true;
+		} else interactPressed = false;
+
+		glClearColor(0.1f,0.1f,0.12f,1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		int width, height; glfwGetFramebufferSize(window, &width, &height);
+		glm::mat4 proj = glm::perspective(glm::radians(45.0f), width/(float)height, 0.1f, 100.0f);
+		glm::mat4 view = glm::lookAt(camPos, camPos + camFront, camUp);
+
+		glUseProgram(program);
+		GLint locMVP = glGetUniformLocation(program, "uMVP");
+		GLint locModel = glGetUniformLocation(program, "uModel");
+		GLint locColor = glGetUniformLocation(program, "uColor");
+		GLint locLight = glGetUniformLocation(program, "uLightPos");
+		glUniform3f(locLight, 5.0f, 5.0f, 5.0f);
+
+		// cube
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(2.0f,0.0f,0.0f));
+		if (cubeActive) model = glm::rotate(model, now, glm::vec3(0.0f,1.0f,0.0f));
+		glm::mat4 mvp = proj * view * model;
+		glUniformMatrix4fv(locMVP,1,GL_FALSE,glm::value_ptr(mvp));
+		glUniformMatrix4fv(locModel,1,GL_FALSE,glm::value_ptr(model));
+		glUniform3f(locColor, 0.8f, 0.3f, 0.2f);
+		glBindVertexArray(cube.vao);
+		glDrawElements(GL_TRIANGLES, cube.indexCount, GL_UNSIGNED_INT, 0);
+
+		// sphere
+		model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(-2.0f,0.0f,0.0f));
+		if (sphereActive) model = glm::rotate(model, now*0.8f, glm::vec3(1.0f,0.0f,0.0f));
+		mvp = proj * view * model;
+		glUniformMatrix4fv(locMVP,1,GL_FALSE,glm::value_ptr(mvp));
+		glUniformMatrix4fv(locModel,1,GL_FALSE,glm::value_ptr(model));
+		glUniform3f(locColor, 0.2f, 0.4f, 0.8f);
+		glBindVertexArray(sphere.vao);
+		glDrawElements(GL_TRIANGLES, sphere.indexCount, GL_UNSIGNED_INT, 0);
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+	}
+
+	glfwDestroyWindow(window);
+	glfwTerminate();
+	return 0;
+}

@@ -1,0 +1,163 @@
+﻿#include "../engine.h"
+
+#include <iostream>
+#include <cmath>
+#include <thread>
+#include <chrono>
+
+// --- GameObject default behavior ---
+void GameObject::update(float /*dt*/) {
+	// base does nothing
+}
+
+void GameObject::onInteract() {
+	// toggle active by default
+	active = !active;
+}
+
+// --- Cube ---
+void Cube::update(float dt) {
+	if (!active) return;
+	rotation.y += rotationSpeed * dt;
+	if (rotation.y > 360.0f) rotation.y -= 360.0f;
+}
+
+void Cube::onInteract() {
+	// toggle active and report
+	active = !active;
+	std::cout << name << " is now " << (active ? "active" : "inactive") << "\n";
+}
+
+// --- Sphere ---
+void Sphere::update(float dt) {
+	if (!active) return;
+	rotation.x += rotationSpeed * dt;
+	if (rotation.x > 360.0f) rotation.x -= 360.0f;
+}
+
+void Sphere::onInteract() {
+	active = !active;
+	std::cout << name << " toggled to " << (active ? "active" : "inactive") << "\n";
+}
+
+// --- Player movement ---
+void Player::move(char direction, float dt) {
+	float dist = speed * dt;
+	switch (direction) {
+	case 'w': position.z += dist; break;
+	case 's': position.z -= dist; break;
+	case 'a': position.x -= dist; break;
+	case 'd': position.x += dist; break;
+	case 'q': position.y += dist; break;
+	case 'e': position.y -= dist; break;
+	default: break;
+	}
+}
+
+// --- Engine implementation ---
+Engine::Engine() {}
+Engine::~Engine() { stop(); }
+
+void Engine::init() {
+	m_player.position = Vector3{ 0,0,0 };
+	spawnDefaultScene();
+}
+
+void Engine::spawnDefaultScene() {
+	auto cube = std::make_shared<Cube>("Cube");
+	cube->position = Vector3{ 2.0f, 0.0f, 0.0f };
+	cube->rotation = Vector3{ 0, 0, 0 };
+
+	auto sphere = std::make_shared<Sphere>("Sphere");
+	sphere->position = Vector3{ -2.0f, 0.0f, 0.0f };
+	sphere->rotation = Vector3{ 0, 0, 0 };
+
+	m_objects.push_back(cube);
+	m_objects.push_back(sphere);
+}
+
+void Engine::run() {
+	m_running = true;
+	using clock = std::chrono::steady_clock;
+	auto last = clock::now();
+
+	std::cout << "Simple console engine started. Controls: w/a/s/d move, q/e up/down, i to interact, x to exit." << std::endl;
+
+	while (m_running) {
+		auto now = clock::now();
+		std::chrono::duration<float> delta = now - last;
+		last = now;
+		float dt = delta.count();
+
+		// Non-blocking-ish input: read a line if available (blocking), but run small tick when empty input
+		// For simplicity, prompt user each frame
+		std::cout << "\nEnter command (w/a/s/d/q/e to move, i to interact, x to quit, p to print state): ";
+		std::string input;
+		if (!std::getline(std::cin, input)) {
+			// EOF or error
+			m_running = false;
+			break;
+		}
+
+		if (!input.empty()) {
+			processInput(input, dt);
+		}
+
+		update(dt);
+		render();
+
+		// simple frame pacing
+		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+	}
+
+	std::cout << "Engine stopped." << std::endl;
+}
+
+void Engine::stop() {
+	m_running = false;
+}
+
+void Engine::processInput(const std::string& input, float dt) {
+	// process each character as a command
+	for (char c : input) {
+		if (c == 'x') { stop(); return; }
+		if (c == 'p') { render(); continue; }
+		if (c == 'i') {
+			// find nearest active object within 1.5 units
+			float best = 1.5f;
+			std::shared_ptr<GameObject> nearest;
+			for (auto& obj : m_objects) {
+				float dx = obj->position.x - m_player.position.x;
+				float dy = obj->position.y - m_player.position.y;
+				float dz = obj->position.z - m_player.position.z;
+				float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+				if (dist < best) { best = dist; nearest = obj; }
+			}
+			if (nearest) {
+				nearest->onInteract();
+			}
+			else {
+				std::cout << "No object in range to interact with." << std::endl;
+			}
+			continue;
+		}
+
+		// movement
+		m_player.move(c, dt);
+	}
+}
+
+void Engine::update(float dt) {
+	for (auto& obj : m_objects) obj->update(dt);
+}
+
+void Engine::render() {
+	// simple text output summarizing scene
+	std::cout << "--- Scene ---\n";
+	std::cout << "Player pos: (" << m_player.position.x << ", " << m_player.position.y << ", " << m_player.position.z << ")\n";
+	for (auto& obj : m_objects) {
+		std::cout << obj->name << " pos:(" << obj->position.x << ", " << obj->position.y << ", " << obj->position.z << ") ";
+		std::cout << " rot:(" << obj->rotation.x << "," << obj->rotation.y << "," << obj->rotation.z << ") ";
+		std::cout << (obj->active ? "active" : "inactive") << "\n";
+	}
+}

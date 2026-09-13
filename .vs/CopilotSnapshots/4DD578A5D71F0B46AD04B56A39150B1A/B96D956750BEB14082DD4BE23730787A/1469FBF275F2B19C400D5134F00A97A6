@@ -1,0 +1,74 @@
+﻿cmake_minimum_required(VERSION 3.10)
+
+project(OpenGL_Engine VERSION 1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# If there is a src subdirectory with its own CMakeLists, add it so
+# that any libraries it defines become available for linking.
+if(EXISTS "${CMAKE_SOURCE_DIR}/src/CMakeLists.txt")
+  add_subdirectory("${CMAKE_SOURCE_DIR}/src")
+endif()
+
+# Collect project sources (root-level .cpp and anything under src/)
+file(GLOB_RECURSE PROJECT_SOURCES
+  "${CMAKE_SOURCE_DIR}/*.cpp"
+  "${CMAKE_SOURCE_DIR}/src/*.cpp"
+)
+
+if(NOT PROJECT_SOURCES)
+  message(FATAL_ERROR "No source files found for the project")
+endif()
+
+add_executable(opengl_engine ${PROJECT_SOURCES})
+
+# Include common include directory if present
+if(EXISTS "${CMAKE_SOURCE_DIR}/include")
+  target_include_directories(opengl_engine PRIVATE "${CMAKE_SOURCE_DIR}/include")
+endif()
+
+# Link to any library target created by src/CMakeLists (example: project_lib)
+if(TARGET project_lib)
+  target_link_libraries(opengl_engine PRIVATE project_lib)
+endif()
+
+# Try to find and link system OpenGL (optional)
+find_package(OpenGL)
+if(OpenGL_FOUND)
+  target_link_libraries(opengl_engine PRIVATE OpenGL::GL)
+endif()
+
+# Installation (optional)
+install(TARGETS opengl_engine DESTINATION bin)
+
+# --- OpenGL target using GLFW, GLAD, and GLM ---
+include(FetchContent)
+
+FetchContent_Declare(
+  glfw
+  GIT_REPOSITORY https://github.com/glfw/glfw.git
+  GIT_TAG        3.3.8
+)
+FetchContent_Declare(
+  glad
+  GIT_REPOSITORY https://github.com/Dav1dde/glad.git
+  GIT_TAG        v0.1.34
+)
+FetchContent_Declare(
+  glm
+  GIT_REPOSITORY https://github.com/g-truc/glm.git
+  GIT_TAG        0.9.9.8
+)
+FetchContent_MakeAvailable(glfw glad glm)
+
+add_executable(opengl_app main_gl.cpp)
+target_include_directories(opengl_app PRIVATE ${glad_SOURCE_DIR}/include)
+target_link_libraries(opengl_app PRIVATE glfw glad glm)
+
+if (WIN32)
+  # keep console for now
+  set_target_properties(opengl_app PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
+
+install(TARGETS opengl_app DESTINATION bin)
